@@ -1,0 +1,9 @@
+[project]
+name = "ms-pr-phantom-jams"
+version = "0.1.0"
+description = "Phantom traffic jam simulation: Nagel-Schreckenberg (micro) and LWR/Godunov (macro)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

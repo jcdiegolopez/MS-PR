@@ -1,0 +1,4 @@
+{
+  "extraPaths": ["."],
+  "exclude": ["web", ".venv", "**/node_modules", "**/__pycache__"]
+}

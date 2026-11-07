@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Web viewer
+node_modules/
+web/dist/
+
+# Generated videos (regenerate with the experiment scripts)
+results/**/*.mp4
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
