@@ -55,7 +55,7 @@ Aplica a todo lo que usa el nivel 1:
 
 **Figuras:**
 1. % de carros detenidos vs. $\rho$, una curva por cada $p$. Hay que marcar la línea vertical en $\rho_c$ y sombrear la **zona fantasma** (donde $p > 0$ ya tiene detenidos y $p = 0$ todavía no)
-2. **Dos diagramas espacio-tiempo lado a lado** con la misma densidad (por ejemplo 0.12 con $v_{max} = 5$): $p = 0$ (líneas limpias) vs. $p = 0.25$ (franjas de atasco que retroceden)
+2. **Dos diagramas espacio-tiempo lado a lado** con la misma densidad (por ejemplo 0.15 con $v_{max} = 5$ y $L = 300$, justo debajo de $\rho_c \approx 0.167$: con $p = 0$ da 0% de detenidos y con $p = 0.25$ alrededor de 10%): $p = 0$ (líneas limpias) vs. $p = 0.25$ (franjas de atasco que retroceden)
 3. Animación de la vía circular con $p = 0.25$, como el experimento de Sugiyama
 
 **Criterio de éxito:** con $p = 0$, el quiebre está exactamente en $\rho_c$, y con $p > 0$ hay detenidos con $\rho < \rho_c$.

@@ -29,7 +29,7 @@ Hay tres opciones para pasarle $Q$ al nivel 2. Vamos a usar las tres y compararl
 | $\Delta t$ | El que cumpla la CFL: $\Delta t \le \Delta x / v_f$ | Con $v_f = 22.5$ m/s (81 km/h) y $\Delta x = 7.5$ m, da $\Delta t \le 0.33$ s. Usar 0.9 × el límite |
 | Largo | El mismo que el nivel 1 | |
 
-Todo el nivel 2 trabaja en **unidades reales** (metros y segundos, o carros/km y carros/h). Si $Q$ viene del nivel 1, primero se convierte (tabla en `03-nivel-1-micro.md`, sección 3.9).
+Los cálculos se hacen en **unidades del modelo** (celdas, pasos, carros/celda y carros/paso), igual que el nivel 1, así que el diagrama de E1 se usa directo, sin convertir. Con $\Delta x$ = 1 celda, $\rho_j = 1$ y la CFL queda $\Delta t \le 1/v_{max}$ pasos. La conversión a unidades reales se hace solo al graficar (tabla en `03-nivel-1-micro.md`, sección 3.9).
 
 ## 4.3 Un paso de simulación
 
@@ -76,7 +76,7 @@ def godunov_step(rho, Q, rho_c, dt, dx, inflow, out_supply, cap=None):
 |---|---|---|
 | M1 | Conservación | Con entrada y salida en 0, $\sum_i \rho_i \Delta x$ se mantiene constante (error de redondeo) |
 | M2 | Positividad | $0 \le \rho \le \rho_j$ siempre, si se cumple la CFL |
-| M3 | CFL violada a propósito | Con $\Delta t = 2\,\Delta x / v_f$ aparecen oscilaciones o valores negativos. Esta figura muestra por qué importa la CFL |
+| M3 | CFL violada a propósito | Con una condición inicial aleatoria y $\Delta t = 1.5\,\Delta x / v_f$, la solución explota (valores negativos o infinitos). Con el escalón del semáforo no explota, pero el error $L^1$ crece unas 10 veces con $\Delta t = 2\,\Delta x / v_f$: la solución sale mal aunque parezca razonable |
 | M4 | Rarefacción (semáforo) con Greenshields | Coincide con la solución analítica de `02`, sección 2.4. Se reporta el error $L^1$ |
 | M5 | Choque | El frente se mueve a la velocidad de Rankine-Hugoniot $s = \dfrac{Q(\rho_R) - Q(\rho_L)}{\rho_R - \rho_L}$ |
 | M6 | Convergencia | Al reducir $\Delta x$ a la mitad, el error $L^1$ de M4 baja. Para este esquema se espera orden ≈ 1 o menos, por las discontinuidades |
