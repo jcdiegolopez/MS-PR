@@ -32,3 +32,27 @@ def test_animate_ring_writes_a_gif(tmp_path):
 def test_animate_ring_rejects_unknown_formats(tmp_path):
     with pytest.raises(ValueError):
         viz.animate_ring([(np.array([0]), np.array([0]))], L=10, vmax=5, path=tmp_path / "ring.avi")
+
+
+def test_plot_density_map_uses_real_units():
+    rho = np.random.default_rng(0).random((30, 40))
+    ax = viz.plot_density_map(rho, dx=1.0, dt=0.5, title="macro")
+    # 30 rows = states at t = 0, 0.5, ..., 14.5: the axis must end at the last one, not at 15.
+    assert ax.get_ylim() == (14.5, 0.0)
+    left, right, bottom, top = ax.images[0].get_extent()
+    assert (left, right) == (0, 40 * 7.5)
+    assert (bottom, top) == (14.75, -0.25)  # each row centered on its own time
+    assert ax.get_xlabel() == "posición (m)" and ax.get_ylabel() == "tiempo (s)"
+
+
+def test_plot_profiles_styles_each_level():
+    x = np.arange(10.0)
+    ax = viz.plot_profiles(x, {
+        "analítica": np.linspace(1, 0, 10),
+        "macro": np.linspace(0.9, 0.1, 10),
+        "micro": {"x": x[::2], "rho": np.full(5, 0.5), "err": np.full(5, 0.05)},
+    })
+    labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert labels == ["analítica", "macro", "micro"]
+    assert ax.lines[0].get_color() == "black"
+    assert ax.get_ylabel() == "densidad (carros/km)"
