@@ -1,0 +1,2 @@
+L,signal_cell,initial_queue_cells,p,vmax,R,measurement_window_s,discharge_flow_mean,discharge_flow_ci95,discharge_flow_veh_h,q_max_e1,q_max_e1_veh_h,discharge_over_capacity
+300,150,67,0.25,3,50,60,0.4786666666666667,0.007976587964509358,1723.2,0.4501993000000001,1620.7174800000003,1.0632328097059827
