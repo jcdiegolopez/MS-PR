@@ -64,3 +64,16 @@ def test_permanent_obstacle_is_never_crossed():
     result = run_open(40, vmax=3, p=0.25, alpha=1.0, T=300, seed=23775, obstacles=(obstacle,))
     assert np.all(result["spacetime"][:, 20:] == -1)
     assert result["detector"][:, 20:].sum() == 0
+
+
+def test_inserted_car_is_not_faster_than_its_gap():
+    result = run_open(40, vmax=3, p=0.25, alpha=1.0, T=500, seed=23775)
+    entries = 0
+    for row in result["spacetime"]:
+        if row[0] < 0:
+            continue
+        ahead = np.flatnonzero(row[1:] >= 0)
+        gap = ahead[0] if len(ahead) else np.inf  # cells free in front of the entry cell
+        assert row[0] <= gap
+        entries += row[0] < 3
+    assert entries > 0  # the cap was actually exercised

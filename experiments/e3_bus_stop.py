@@ -18,7 +18,7 @@ from matplotlib.animation import writers
 
 from src.micro import Obstacle, run_open
 from src.units import cells_to_m, q_to_veh_h, v_to_kmh
-from src.viz import animate_road, plot_spacetime
+from src.viz import animate_road, plot_density_map, plot_spacetime
 
 E1_PATH = Path("results/e1/fundamental_p0.25_v3.csv")
 CALIBRATION_PATH = Path("results/calibracion_alpha.csv")
@@ -342,9 +342,8 @@ def main() -> None:
             axes[1].text(0.5, 0.5, "Nivel 2 no integrado\n(src/macro.py y src/fundamental.py pendientes)",
                          ha="center", va="center")
         else:
-            image = axes[1].imshow(representative_macro, aspect="auto", origin="upper", cmap="viridis")
-            axes[1].set(title="Nivel 2 (macro)", xlabel="posición (celda)", ylabel="paso numérico")
-            fig.colorbar(image, ax=axes[1], label="densidad (vehículos/celda)")
+            macro_dt = macro_contract[3]
+            plot_density_map(representative_macro, 1.0, macro_dt, ax=axes[1], title="Nivel 2 (macro)")
         fig.savefig(OUT / "comparacion_espaciotiempo_micro_macro.png")
         plt.close(fig)
 

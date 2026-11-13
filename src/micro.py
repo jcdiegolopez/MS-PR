@@ -177,8 +177,11 @@ def run_open(
 
         # The entry rule is evaluated after movement, exactly once per step.
         if (len(pos) == 0 or pos[0] > 0) and rng.random() < alpha:
+            # The new car may not be faster than the gap ahead allows, or the
+            # recorded state would show an impossible speed.
+            entry_gap = pos[0] - 1 if len(pos) else vmax
             pos = np.insert(pos, 0, 0)
-            vel = np.insert(vel, 0, vmax)
+            vel = np.insert(vel, 0, min(vmax, entry_gap))
             detector[t, 0] += 1
             inserted += 1
 

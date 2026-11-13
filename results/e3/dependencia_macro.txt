@@ -1,1 +1,1 @@
-La comparación macroscópica no se calculó porque src/fundamental.py y src/macro.py todavía conservan NotImplementedError. Los resultados micro y Rankine-Hugoniot son reales; las columnas macro se dejaron vacías para que E3 pueda regenerarse cuando Persona 3 integre su código.
+La implementación macroscópica estaba disponible y se usó mediante sus contratos públicos.
