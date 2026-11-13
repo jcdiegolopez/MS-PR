@@ -26,7 +26,7 @@ from src.macro import cfl_dt, godunov_step, run_macro
 from src.units import q_to_veh_h, rho_to_veh_km, steps_to_s
 
 OUT = Path("results/validacion_macro")
-MEASURED = Path("results/e1/fundamental_p0.25_v5.csv")
+MEASURED = Path("results/e1/fundamental_p0.25_v3.csv")  # base diagram, same as E3 and E4
 VF = 1.0
 Q, RHO_C, Q_MAX = greenshields(VF)
 
