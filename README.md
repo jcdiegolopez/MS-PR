@@ -49,4 +49,26 @@ npm test          # prueba de equivalencia JavaScript = Python
 
 El visor es un puerto a JavaScript del mismo modelo, para poder cambiar parámetros en vivo. **Los resultados del proyecto salen de la versión en Python**; el visor se verifica contra ella con una prueba de equivalencia.
 
+Publicado en https://jcdiegolopez.github.io/MS-PR/ (se actualiza solo con cada cambio en `main`; la primera vez, un administrador del repo activa *Settings → Pages → Source: GitHub Actions*).
+
+### Qué se puede hacer
+
+- **Escenarios:** *Anillo* (E2, tramo periódico sin obstáculos), *Bus* (E3, toca la calle para detener un bus 30 s) y *Semáforo* (E4, ciclo de rojo y verde configurable).
+- **Mostrar:** *Carros* (nivel 1), *Fluido* (nivel 2, la calle se enciende de cian a magenta y rojo según la densidad) o *Ambos* superpuestos.
+- **En vivo, sin reiniciar:** distracción `p`, velocidad máxima, llegada de carros `α` y el ciclo del semáforo. La densidad y la semilla reinician el anillo.
+- **Panel:** flujo, densidad, velocidad media y % de detenidos, con el diagrama fundamental de E1 y el estado actual encima.
+- **Vista:** color por velocidad o solo los detenidos, estelas y tres cámaras (inclinada, cenital, seguir un carro).
+- **Teclado:** `Espacio` pausa, `R` reinicia.
+
+Se simulan los primeros 2 km de la línea trazada de la Roosevelt (267 celdas de 7.5 m, la misma vía de E3).
+
+### Cómo se verifica contra Python
+
+`python -m experiments.export_fixtures` exporta desde la simulación oficial los casos que usa `npm test`:
+
+- con `p = 0` el modelo no tiene azar, así que el JavaScript reproduce **exactamente** cada paso de Python, en el anillo y en la vía abierta con bus y semáforo;
+- con `p = 0.25` el flujo medio cae dentro del intervalo de confianza de E1;
+- el Godunov en JavaScript da el mismo perfil y el mismo error L¹ que Python en el semáforo (M4);
+- los diagramas fundamentales de E1 pasan a `web/public/fundamental_p*_v*.json`.
+
 Mapa: OpenFreeMap © OpenMapTiles. Datos de OpenStreetMap.
