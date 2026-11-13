@@ -17,7 +17,7 @@ matplotlib.use("Agg")  # render to files, no window needed
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.animation import FFMpegWriter, FuncAnimation, PillowWriter  # noqa: E402
-from matplotlib.patches import Circle  # noqa: E402
+from matplotlib.patches import Circle, Rectangle  # noqa: E402
 
 from src.units import cells_to_m, steps_to_s, v_to_kmh  # noqa: E402
 
@@ -104,7 +104,52 @@ def animate_ring(history, L: int, vmax: int, path, fps: int = 15) -> Path:
 
 def animate_road(spacetime: np.ndarray, vmax: int, path, fps: int = 15, obstacles=()):
     """Level 1 owner: the road as a horizontal strip, cars as colored rectangles."""
-    raise NotImplementedError
+    spacetime = np.asarray(spacetime)
+    if spacetime.ndim != 2:
+        raise ValueError("spacetime must have shape (T, L)")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    T, L = spacetime.shape
+
+    fig, ax = plt.subplots(figsize=(10, 2.4))
+    road_length_m = float(cells_to_m(L))
+    ax.add_patch(Rectangle((0, -0.22), road_length_m, 0.44, color="0.88", zorder=0))
+    ax.plot([0, road_length_m], [0, 0], "--", color="white", lw=1, zorder=1)
+    cars = ax.scatter([], [], marker="s", s=42, c=[], cmap=SPEED_CMAP, vmin=0, vmax=vmax, zorder=3)
+    blocks = ax.scatter([], [], marker="X", s=90, color="#7f0000", zorder=4, label="obstáculo activo")
+    time_label = ax.text(0.01, 0.9, "", transform=ax.transAxes, ha="left", va="top")
+    ax.set_xlim(0, road_length_m)
+    ax.set_ylim(-0.65, 0.65)
+    ax.set_yticks([])
+    ax.set_xlabel("posición (m)")
+    ax.set_title("Vía abierta — modelo microscópico")
+    _speed_colorbar(fig, cars, ax, vmax)
+
+    def update(t):
+        occupied = np.flatnonzero(spacetime[t] >= 0)
+        if len(occupied):
+            cars.set_offsets(np.c_[cells_to_m(occupied + 0.5), np.zeros(len(occupied))])
+            cars.set_array(spacetime[t, occupied].astype(float))
+        else:
+            cars.set_offsets(np.empty((0, 2)))
+            cars.set_array(np.empty(0))
+
+        active = [
+            obstacle.cell
+            for obstacle in obstacles
+            if obstacle.t_start <= t < obstacle.t_end
+        ]
+        if active:
+            blocks.set_offsets(np.c_[cells_to_m(np.asarray(active) + 0.5), np.zeros(len(active))])
+        else:
+            blocks.set_offsets(np.empty((0, 2)))
+        time_label.set_text(f"t = {steps_to_s(t):.0f} s")
+        return cars, blocks, time_label
+
+    anim = FuncAnimation(fig, update, frames=T, blit=True)
+    anim.save(path, writer=_writer_for(path, fps), dpi=90)
+    plt.close(fig)
+    return path
 
 
 def plot_density_map(rho_xt: np.ndarray, dx: float, dt: float, ax=None, title: str = ""):
