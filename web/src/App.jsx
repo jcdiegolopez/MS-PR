@@ -63,7 +63,7 @@ const CAPTIONS = {
 
 // The fluid model has no randomness: on the ring it starts nearly even and stays that way.
 // That is one of the project's results, so the viewer says it instead of showing a flat street.
-const RING_MACRO_NOTE = 'El modelo de fluido no tiene azar: sin un obstáculo, la densidad se queda pareja y no nacen atascos. Prueba Bus o Semáforo para ver la cola como una onda.'
+const RING_MACRO_NOTE = 'El fluido no tiene azar: no puede crear un atasco desde una densidad pareja. Las manchas son irregularidades que traen los carros al inicio: por debajo de la densidad crítica se aplanan y por encima retroceden. Prueba Bus o Semáforo para ver una cola causada por un obstáculo.'
 
 const DEFAULTS = { scenario: 'ring', rho: 0.15, alpha: 0.3, vmax: 5, p: 0.25, seed: 3, red: 40, green: 30 }
 
