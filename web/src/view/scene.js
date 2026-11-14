@@ -1,9 +1,9 @@
 // Turns the simulation state into deck.gl layers on the Roosevelt.
-// Identity (team guide §5): the street is neon cyan, cars are the only color with
-// meaning (green = vmax, red = stopped), the macro view lights the street from
-// cyan (empty) to magenta and red (jam), the bus is white, the light glows.
-import { PathLayer, ScatterplotLayer } from '@deck.gl/layers'
-import { SimpleMeshLayer } from '@deck.gl/mesh-layers'
+// Identity: the street has a neon cyan edge, cars are colored by speed (green = vmax,
+// red = stopped), and the macro view is a 3D band beside or on the street that rises
+// with density and uses map-app traffic colors (green flows, dark red is a jam).
+import { PathLayer, ScatterplotLayer, SolidPolygonLayer } from '@deck.gl/layers'
+import { ScenegraphLayer, SimpleMeshLayer } from '@deck.gl/mesh-layers'
 import { CubeGeometry } from '@luma.gl/engine'
 
 export const CYAN = [0, 229, 255]
@@ -15,6 +15,20 @@ const DIM = [96, 106, 122]
 const WHITE = [244, 247, 250]
 
 const CUBE = new CubeGeometry()
+
+// Low-poly models made in Blender for this project (assets/visor-modelos.blend). Z up, front
+// toward +X, origin on the ground. The car body is white so getColor can tint it by speed.
+const MODELS = `${import.meta.env.BASE_URL}models/`
+const CAR_MODEL = `${MODELS}carro.glb`
+const BUS_MODEL = `${MODELS}bus.glb`
+const LIGHT_MODEL = `${MODELS}semaforo.glb`
+// From this zoom on, cars are drawn as models; farther out they are enlarged colored blocks.
+const MODEL_ZOOM = 16
+// In the model the arm reaches 5.6 m toward -Y, which is the right of the direction of travel,
+// so the pole stands 6 m to the LEFT of the lane and the lamps hang over it.
+const LIGHT_POLE_SIDE_M = 6
+const LIGHT_ARM_M = 5.6
+const LIGHT_HEAD_M = 5.1 // height of the middle lamp
 const CAR = [2.25, 1.0, 0.75] // half sizes in meters: 4.5 x 2 x 1.5 m
 const BUS = [6.0, 1.3, 1.6] // 12 x 2.6 x 3.2 m
 const MATERIAL = { ambient: 0.55, diffuse: 0.6, shininess: 24, specularColor: [60, 64, 72] }
@@ -27,13 +41,49 @@ export function speedColor(v, vmax) {
   return f < 0.5 ? mix(RED, YELLOW, f / 0.5) : mix(YELLOW, GREEN, (f - 0.5) / 0.5)
 }
 
+const JAM = [140, 20, 40] // dark red: cars standing still, bumper to bumper
+
 /**
- * Street color by density: cyan while traffic is free, turning magenta as it nears the
- * critical density rho_c (capacity), then red toward a full jam.
+ * Density color in map-app traffic colors, measured against the critical density rho_c
+ * (the road's capacity): green well below it, yellow at it, red past it, dark red near a full jam.
  */
 export function densityColor(rho, rhoC) {
-  if (rho <= rhoC) return mix(CYAN, MAGENTA, Math.min(1, Math.max(0, (rho / rhoC - 0.6) / 0.4)))
-  return mix(MAGENTA, RED, Math.min(1, (rho - rhoC) / (0.75 - rhoC)))
+  const f = rhoC > 0 ? rho / rhoC : 0
+  if (f <= 0.6) return GREEN
+  if (f <= 1) return mix(GREEN, YELLOW, (f - 0.6) / 0.4)
+  if (f <= 2) return mix(YELLOW, RED, f - 1)
+  return mix(RED, JAM, Math.min(1, (f - 2) / 2))
+}
+
+// Meters -> degrees near the Roosevelt (latitude ~14.6°).
+const M_LAT = 1 / 111320
+const mLng = (lat) => 1 / (111320 * Math.cos((lat * Math.PI) / 180))
+
+/** Shift a point `east`/`north` meters. */
+const offset = (lng, lat, east, north) => [lng + east * mLng(lat), lat + north * M_LAT]
+
+/**
+ * The density band: one quad per cell, 7.5 m long and `width` m wide, moved `side` m to the
+ * right of the direction of travel (0 = on the street). Built once; heights and colors change.
+ */
+export function buildBand(cells, { width = 9, side = 0 } = {}) {
+  return cells.map((c, i) => {
+    const b = (c.bearing * Math.PI) / 180
+    const along = [Math.sin(b), Math.cos(b)] // unit vector (east, north) along the street
+    const right = [Math.cos(b), -Math.sin(b)] // unit vector to the right of travel
+    const corner = (a, s) => offset(c.lng, c.lat, along[0] * a + right[0] * s, along[1] * a + right[1] * s)
+    const h = 3.75
+    const w0 = side - width / 2
+    const w1 = side + width / 2
+    return { i, polygon: [corner(-h, w0), corner(h, w0), corner(h, w1), corner(-h, w1)] }
+  })
+}
+
+// Height of the band for a full jam (1 car per 7.5 m cell); a free street stays almost flat.
+// Tall enough to read across 2 km, lower up close so it does not hide the cars.
+function bandHeight(zoom = 15) {
+  const f = Math.min(1, Math.max(0, (zoom - 15) / 3)) // 0 at zoom 15, 1 at zoom 18
+  return 60 - f * 50 // 60 m far away -> 10 m up close
 }
 
 /** Position on the street for a fractional cell index (cells are 7.5 m long). */
@@ -67,14 +117,34 @@ export function buildSegments(cells) {
   return [{ path: cells.map((c) => [c.lng, c.lat]) }]
 }
 
-// Glow passes, wide and faint to thin and solid; sized to read on a projector.
-const GLOW = [
-  [30, 0.16],
-  [15, 0.4],
-  [5, 1],
+// The street, drawn in meters so it widens as you zoom in: a faint cyan glow, a cyan edge
+// and a dark asphalt lane on top. The minimum pixel widths keep it visible from far away.
+const STREET = [
+  { id: 'glow', width: 30, minPx: 26, color: [...CYAN, 40] },
+  { id: 'edge', width: 13, minPx: 7, color: [...CYAN, 210] },
+  { id: 'lane', width: 10, minPx: 3, color: [24, 28, 36, 255] },
 ]
 
 const yaw = (bearing) => 90 - bearing // compass bearing -> rotation from east, counterclockwise
+
+/**
+ * Models are drawn wider and taller than life so they read on a projector, more so as the
+ * camera pulls back. Length stays below a 7.5 m cell so the cars of a jam never overlap.
+ * Model axes: x = length (front), y = width, z = height.
+ */
+function modelGrow(zoom = 18) {
+  return Math.min(1.6, Math.max(1, 2 ** ((18 - zoom) / 2))) // 1 at zoom 18, 1.6 from ~16.6
+}
+const carModelScale = (zoom) => {
+  const k = modelGrow(zoom)
+  return [Math.min(1.55, 1.3 * k), 1.7 * k, 1.6 * k] // at most 6.9 m long
+}
+const busModelScale = (zoom) => {
+  const k = modelGrow(zoom)
+  return [1.15, 1.5 * k, 1.4 * k]
+}
+// The traffic light is a single landmark: exaggerated on purpose so it is found at a glance.
+const lightScale = (close) => (close ? 2.5 : 4)
 
 /**
  * Real cars are 4.5 m long: invisible from the overview camera. When zoomed out they are
@@ -96,45 +166,44 @@ export function buildLayers(frame) {
   const busScale = boxScale(BUS, frame.zoom, 1.25)
   const layers = []
 
-  // The street: cyan glow, or lit by density in the macro views.
-  if (showMacro) {
-    const colors = Array.from(rho, (r) => densityColor(r, rhoC))
-    GLOW.forEach(([width, a], k) => {
-      // With cars on top ("Ambos"), the bright core is thinner and dimmer so the cars stand out.
-      const core = k === 2 && showCars
-      const alpha = Math.round(255 * (core ? 0.6 : a))
-      if (core) width = 2.5
-      layers.push(
-        new PathLayer({
-          id: `macro-${k}`,
-          data: segments,
-          getPath: (d) => d.path,
-          getColor: () => colors.map((c) => [...c, alpha]), // one color per cell
-          getWidth: width,
-          widthUnits: 'pixels',
-          capRounded: true,
-          jointRounded: true,
-          pickable: k === 0,
-          updateTriggers: { getColor: [frame.t, rhoC] },
-        }),
-      )
-    })
-  } else {
-    GLOW.forEach(([width, a], k) => {
-      layers.push(
-        new PathLayer({
-          id: `road-${k}`,
-          data: [{ path: road }],
-          getPath: (d) => d.path,
-          getColor: k === 2 ? [122, 243, 255, 255] : [...CYAN, Math.round(255 * a * 0.55)],
-          getWidth: width,
-          widthUnits: 'pixels',
-          capRounded: true,
-          jointRounded: true,
-          pickable: k === 0,
-        }),
-      )
-    })
+  // The street, always: it is what you click to stop a bus.
+  STREET.forEach((s, k) => {
+    layers.push(
+      new PathLayer({
+        id: `road-${s.id}`,
+        data: [{ path: road }],
+        getPath: (d) => d.path,
+        getColor: s.color,
+        getWidth: s.width,
+        widthUnits: 'meters',
+        widthMinPixels: s.minPx,
+        capRounded: true,
+        jointRounded: true,
+        pickable: k === 0,
+      }),
+    )
+  })
+
+  // The fluid (level 2): a band that rises with density. On its own it sits on the street;
+  // with the cars ("Ambos") it moves beside the street so both levels are visible.
+  if (showMacro && frame.band) {
+    // The PDE advances in 1 s steps; blend the last two states so the band rises smoothly.
+    const prev = frame.rhoPrev ?? rho
+    const f = Math.min(1, Math.max(0, frame.f ?? 1))
+    const rhoAt = (i) => prev[i] + (rho[i] - prev[i]) * f
+    layers.push(
+      new SolidPolygonLayer({
+        id: 'macro-band',
+        data: showCars ? frame.bandSide : frame.band,
+        getPolygon: (d) => d.polygon,
+        extruded: true,
+        getElevation: (d) => 0.5 + rhoAt(d.i) * bandHeight(frame.zoom),
+        getFillColor: (d) => [...densityColor(rhoAt(d.i), rhoC), 235],
+        material: { ambient: 0.6, diffuse: 0.5, shininess: 8 },
+        pickable: true,
+        updateTriggers: { getElevation: [frame.tick, frame.zoom], getFillColor: [frame.tick, rhoC] },
+      }),
+    )
   }
 
   if (showCars && frame.trails) {
@@ -151,7 +220,23 @@ export function buildLayers(frame) {
     )
   }
 
-  if (showCars) {
+  const close = (frame.zoom ?? 0) >= MODEL_ZOOM
+
+  if (showCars && close) {
+    layers.push(
+      new ScenegraphLayer({
+        id: 'cars-model',
+        data: cars,
+        scenegraph: CAR_MODEL,
+        _lighting: 'pbr',
+        getPosition: (d) => [d.lng, d.lat, 0],
+        getOrientation: (d) => [0, yaw(d.bearing), 0],
+        getScale: carModelScale(frame.zoom),
+        getColor: (d) => [...carColor(d.v, vmax, colorMode), 255],
+        updateTriggers: { getPosition: frame.tick, getOrientation: frame.tick, getColor: [frame.tick, colorMode, vmax] },
+      }),
+    )
+  } else if (showCars) {
     layers.push(
       new SimpleMeshLayer({
         id: 'cars',
@@ -190,16 +275,26 @@ export function buildLayers(frame) {
 
   if (frame.buses.length) {
     layers.push(
-      new SimpleMeshLayer({
-        id: 'buses',
-        data: frame.buses,
-        mesh: CUBE,
-        material: MATERIAL,
-        getPosition: (d) => [d.lng, d.lat, busScale[2]],
-        getOrientation: (d) => [0, yaw(d.bearing), 0],
-        getScale: busScale,
-        getColor: [...WHITE, 255],
-      }),
+      close
+        ? new ScenegraphLayer({
+            id: 'buses-model',
+            data: frame.buses,
+            scenegraph: BUS_MODEL,
+            _lighting: 'pbr',
+            getPosition: (d) => [d.lng, d.lat, 0],
+            getOrientation: (d) => [0, yaw(d.bearing), 0],
+            getScale: busModelScale(frame.zoom),
+          })
+        : new SimpleMeshLayer({
+            id: 'buses',
+            data: frame.buses,
+            mesh: CUBE,
+            material: MATERIAL,
+            getPosition: (d) => [d.lng, d.lat, busScale[2]],
+            getOrientation: (d) => [0, yaw(d.bearing), 0],
+            getScale: busScale,
+            getColor: [...WHITE, 255],
+          }),
     )
   }
 
@@ -223,15 +318,40 @@ export function buildLayers(frame) {
         updateTriggers: { getColor: red },
       }),
     )
+    // The pole stands to the left of travel; scaled with the model so the head stays over the lane.
+    const s = lightScale(close)
+    const b = (bearing * Math.PI) / 180
+    const left = [-Math.cos(b), Math.sin(b)] // unit vector (east, north) to the left of travel
+    const pole = offset(lng, lat, left[0] * LIGHT_POLE_SIDE_M * s, left[1] * LIGHT_POLE_SIDE_M * s)
+    const headSide = (LIGHT_POLE_SIDE_M - LIGHT_ARM_M) * s
+    const head = offset(lng, lat, left[0] * headSide, left[1] * headSide)
+    layers.push(
+      new ScenegraphLayer({
+        id: 'light-model',
+        data: [{ position: [...pole, 0] }],
+        scenegraph: LIGHT_MODEL,
+        _lighting: 'pbr',
+        sizeScale: s,
+        getPosition: (d) => d.position,
+        getOrientation: [0, yaw(bearing), 0],
+        updateTriggers: { getPosition: s },
+      }),
+    )
     layers.push(
       new ScatterplotLayer({
         id: 'light',
-        data: [
-          { r: 22, a: 50 },
-          { r: 12, a: 120 },
-          { r: 6, a: 255 },
-        ],
-        getPosition: [lng, lat, 7],
+        data: close
+          ? [
+              { r: 16, a: 60 },
+              { r: 8, a: 140 },
+              { r: 4, a: 255 },
+            ]
+          : [
+              { r: 22, a: 50 },
+              { r: 12, a: 120 },
+              { r: 6, a: 255 },
+            ],
+        getPosition: [...head, LIGHT_HEAD_M * s],
         getRadius: (d) => d.r,
         radiusUnits: 'pixels',
         billboard: true,

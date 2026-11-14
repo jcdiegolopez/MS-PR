@@ -110,6 +110,7 @@ export function stepSim(sim) {
     cap = new Float64Array(L + 1).fill(Infinity)
     for (const o of obstacles) cap[o.cell] = 0 // interface in front of the blocked cell
   }
+  sim.rhoPrev = sim.rho // the viewer blends the last two states between steps
   for (let s = 0; s < sub; s++) {
     sim.rho =
       scenario === 'ring'

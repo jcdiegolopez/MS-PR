@@ -50,11 +50,84 @@ body,
   scrollbar-color: var(--line-strong) transparent;
 }
 
-/* Floating surfaces share one material: dark, translucent, soft shadow. */
-.title,
-.side,
-.live,
-.legend,
+/* Layout: a side panel that takes its own column, and the map in the rest. Nothing covers the map. */
+.app {
+  --side-w: 400px;
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
+  height: 100%;
+  transition: grid-template-columns 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.app.panel-closed {
+  --side-w: 56px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel-solid);
+  border-right: 1px solid var(--line-strong);
+  z-index: 3;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 12px 12px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-closed .sidebar-head {
+  padding: 12px 8px;
+  justify-content: center;
+  border-bottom: 0;
+}
+
+.panel-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  margin-left: auto;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color 160ms ease-out, background-color 160ms ease-out;
+}
+
+.panel-toggle:hover {
+  color: var(--text);
+  background: rgba(230, 237, 243, 0.06);
+}
+
+.panel-closed .panel-toggle {
+  margin-left: 0;
+}
+
+.sidebar-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 18px 18px;
+}
+
+.stage {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The only thing over the map: the short bus hint. */
 .hint {
   background: var(--panel);
   backdrop-filter: blur(10px) saturate(1.1);
@@ -62,24 +135,23 @@ body,
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-}
-
-/* Above the map and deck.gl canvases. */
-.title,
-.side,
-.bottom-left,
-.hint {
   z-index: 2;
 }
 
-/* Signature, top left */
+.note {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: rgba(255, 204, 0, 0.08);
+  border: 1px solid rgba(255, 204, 0, 0.28);
+  border-radius: 9px;
+  text-wrap: pretty;
+}
+
 .title {
-  position: absolute;
-  top: var(--gap);
-  left: var(--gap);
-  max-width: min(440px, calc(100vw - 2 * var(--gap) - 140px));
-  padding: 12px 16px;
-  pointer-events: none;
+  min-width: 0;
 }
 
 .title h1 {
@@ -140,29 +212,9 @@ body,
   }
 }
 
-/* Controls, right side */
-.side {
-  position: absolute;
-  top: var(--gap);
-  right: var(--gap);
-  width: 320px;
-  max-height: calc(100vh - 2 * var(--gap) - 20px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.side:not(.open) {
-  width: auto;
-}
-
-.panel-toggle {
-  display: none;
-}
-
+/* Controls, inside the side panel */
 .controls {
-  overflow-y: auto;
-  padding: 4px 16px 10px;
+  border-top: 1px solid var(--line);
 }
 
 .controls section {
@@ -388,19 +440,9 @@ kbd {
   border-radius: 5px;
 }
 
-/* Live panel and legend, bottom left */
-.bottom-left {
-  position: absolute;
-  left: var(--gap);
-  bottom: calc(var(--gap) + 22px);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 300px;
-}
-
+/* Live data, top of the side panel */
 .live {
-  padding: 12px 14px 10px;
+  padding: 0;
 }
 
 .live-head {
@@ -508,6 +550,11 @@ kbd {
   fill: var(--faint);
 }
 
+.fd .axis {
+  font-size: 11.5px;
+  fill: var(--muted);
+}
+
 .fd .crit {
   stroke: var(--line-strong);
   stroke-dasharray: 3 3;
@@ -569,7 +616,9 @@ kbd {
 }
 
 .legend {
-  padding: 9px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -597,9 +646,16 @@ kbd {
   background: linear-gradient(to right, var(--stop), var(--warn), var(--go));
 }
 
+/* Traffic colors everyone already reads from map apps: green flows, dark red is a jam. */
 .ramp.density {
-  background: linear-gradient(to right, var(--accent), var(--macro) 55%, var(--stop));
-  box-shadow: 0 0 8px rgba(255, 46, 196, 0.35);
+  background: linear-gradient(to right, var(--go), var(--warn) 35%, var(--stop) 65%, #8c1428);
+}
+
+.legend-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--faint);
 }
 
 .swatch.stop {
@@ -620,77 +676,47 @@ kbd {
   color: var(--muted) !important;
 }
 
-/* Small screens: controls become a sheet the presenter can open and close. */
+/* Small screens: the map on top, the panel below it (still not covering the map). */
 @media (max-width: 760px) {
-  :root {
-    --gap: 10px;
+  .app,
+  .app.panel-closed {
+    grid-template-columns: 1fr;
+    grid-template-rows: 55vh minmax(0, 1fr);
   }
 
-  .title {
-    max-width: calc(100vw - 2 * var(--gap) - 130px);
-    padding: 10px 12px;
+  .app.panel-closed {
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
-  .title h1 {
-    font-size: 14px;
+  .sidebar {
+    order: 2;
+    border-right: 0;
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .stage {
+    order: 1;
+  }
+
+  .panel-closed .sidebar-head {
+    justify-content: flex-end;
   }
 
   .title p {
-    display: none;
-  }
-
-  .panel-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text);
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-  }
-
-  .side.open {
-    top: auto;
-    left: var(--gap);
-    right: var(--gap);
-    bottom: calc(var(--gap) + 22px); /* the map attribution stays visible below */
-    width: auto;
-    max-height: 70vh;
-    z-index: 5; /* over the live panel while the presenter changes settings */
-  }
-
-  .side.open .panel-toggle {
-    align-self: flex-end;
-  }
-
-  .bottom-left {
-    width: min(300px, calc(100vw - 2 * var(--gap)));
-    bottom: calc(var(--gap) + 20px);
-  }
-
-  .live .fd {
-    display: none;
+    font-size: 12.5px;
   }
 
   .hint {
-    top: 64px;
-    bottom: auto;
     font-size: 13px;
-  }
-}
-
-@media (min-width: 761px) {
-  .panel-toggle {
-    display: none !important;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .hint {
     animation: none;
+  }
+
+  .app {
+    transition: none;
   }
 }
