@@ -212,9 +212,10 @@ export function Controls(props) {
           value={camera}
           onChange={setCamera}
           options={[
-            { value: 'tilt', label: 'Inclinada' },
+            { value: 'near', label: 'Cerca', title: 'Unos 400 m alrededor de la acción' },
+            { value: 'tilt', label: 'Toda la calle', title: 'Los 2 km en perspectiva' },
             { value: 'top', label: 'Cenital' },
-            { value: 'follow', label: 'Seguir carro' },
+            { value: 'follow', label: 'Seguir', title: 'La cámara va detrás de un carro' },
           ]}
         />
       </section>

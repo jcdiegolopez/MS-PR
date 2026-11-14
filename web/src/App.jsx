@@ -4,7 +4,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { buildCellTable } from './geo/road.js'
 import { addBus, carsAt, createSim, lightIsRed, stepSim, updateSim } from './sim/engine.js'
 import { diagramForP } from './sim/godunov.js'
-import { buildLayers, buildSegments, cellPoint, nearestCell } from './view/scene.js'
+import { buildBand, buildLayers, buildSegments, cellPoint, nearestCell } from './view/scene.js'
 import { Controls } from './ui/controls.jsx'
 import { Legend, LivePanel } from './ui/live.jsx'
 import { CloseIcon, SlidersIcon, TapIcon } from './ui/icons.jsx'
@@ -16,54 +16,43 @@ const VMAX_VALUES = [3, 5]
 // The simulated street: the first 2 km of the traced line (267 cells of 7.5 m, the same road as E3).
 const ROAD_CELLS = 267
 // The street heads 302° (WNW). Cameras turn the map so traffic climbs from the lower left
-// toward the upper right, and fit both ends of the 2 km into the space the panels leave free.
+// toward the upper right. Nothing floats over the map any more, so framing needs no panel math.
 const STREET_BEARING = 302
 const MID = { longitude: -90.54248, latitude: 14.61813 }
 const TILT = { ...MID, zoom: 15.6, pitch: 55, bearing: STREET_BEARING - 45 }
-const wide = () => window.innerWidth > 760
-const FREE = () => (wide() ? { top: 120, bottom: 40, left: 360, right: 345 } : { top: 80, bottom: 230, left: 10, right: 10 })
+const PADDING = 48
 
-function frameStreet(map, cells, camera, duration = 1200) {
-  const lngs = cells.map((c) => c.lng)
-  const lats = cells.map((c) => c.lat)
-  const bounds = [
-    [Math.min(...lngs), Math.min(...lats)],
-    [Math.max(...lngs), Math.max(...lats)],
-  ]
-  const bearing = camera === 'top' ? STREET_BEARING - 90 : wide() ? STREET_BEARING - 45 : STREET_BEARING - 10
-  const pitch = camera === 'top' ? 0 : 55
-  const padding = FREE()
-  // MapLibre adds this padding to the map's own, so the map itself always keeps zero padding.
+/** Where the "near" camera looks: the light, the last bus, or the middle of the street. */
+function focusCell(sim, n) {
+  if (!sim) return Math.round(n * 0.5)
+  if (sim.params.scenario === 'light') return Math.max(0, sim.lightCell - 25)
+  if (sim.params.scenario === 'bus') return sim.buses.length ? Math.max(0, sim.buses[sim.buses.length - 1].cell - 20) : Math.round(n * 0.6)
+  return Math.round(n * 0.5)
+}
+
+function frameStreet(map, cells, camera, sim, duration = 1200) {
   map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 })
-  const cam = map.cameraForBounds(bounds, { bearing, padding })
-  if (!cam) return
-  const before = { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() }
-
-  // The lat/lng box is larger than the turned street, so start a little closer, then check the
-  // result on screen: every cell must clear the panels by 16 px, or the camera pans or backs off.
-  map.jumpTo({ ...cam, zoom: cam.zoom + (camera === 'top' ? 0.3 : wide() ? 0.45 : 0.5), bearing, pitch })
-  const live = document.querySelector('.bottom-left')?.getBoundingClientRect()
-  const side = document.querySelector('.side')?.getBoundingClientRect()
-  const gap = 16
-  for (let pass = 0; pass < 10; pass++) {
-    const pts = cells.map((c) => map.project([c.lng, c.lat]))
-    const hidden = (r, pt) => r && pt.x > r.left - gap && pt.x < r.right + gap && pt.y > r.top - gap && pt.y < r.bottom + gap
-    const underLive = pts.filter((pt) => hidden(live, pt))
-    const underSide = pts.filter((pt) => wide() && hidden(side, pt))
-    if (!underLive.length && !underSide.length) break
-    const right = underLive.length ? Math.max(...underLive.map((pt) => live.right + gap - pt.x)) : 0
-    const left = underSide.length ? Math.max(...underSide.map((pt) => pt.x - (side.left - gap))) : 0
-    const roomRight = side ? side.left - gap - Math.max(...pts.map((pt) => pt.x)) : 0
-    const roomLeft = live ? Math.min(...pts.filter((pt) => pt.y > live.top - gap).map((pt) => pt.x), Infinity) - (live.right + gap) : 0
-    if (wide() && right > 0 && !left && right <= roomRight) map.panBy([-right, 0], { duration: 0 })
-    else if (wide() && left > 0 && !right && left <= roomLeft) map.panBy([left, 0], { duration: 0 })
-    else map.setZoom(map.getZoom() - 0.1)
+  let target
+  if (camera === 'near') {
+    // About 400 m of street, close enough to see each car's shape.
+    const c = cellPoint(cells, focusCell(sim, cells.length))
+    target = { center: [c.lng, c.lat], zoom: 17.2, pitch: 62, bearing: c.bearing - 35 }
+  } else {
+    const lngs = cells.map((c) => c.lng)
+    const lats = cells.map((c) => c.lat)
+    const bounds = [
+      [Math.min(...lngs), Math.min(...lats)],
+      [Math.max(...lngs), Math.max(...lats)],
+    ]
+    const bearing = camera === 'top' ? STREET_BEARING - 90 : STREET_BEARING - 45
+    const pitch = camera === 'top' ? 0 : 55
+    const cam = map.cameraForBounds(bounds, { bearing, padding: PADDING })
+    if (!cam) return
+    // The lat/lng box is larger than the turned street, so the street fits a little closer.
+    target = { ...cam, zoom: cam.zoom + (camera === 'top' ? 0.3 : 0.45), bearing, pitch }
   }
-  const after = { center: map.getCenter(), zoom: map.getZoom(), bearing, pitch }
-  if (duration > 0) {
-    map.jumpTo(before)
-    map.easeTo({ ...after, duration })
-  }
+  if (duration > 0) map.easeTo({ ...target, duration })
+  else map.jumpTo(target)
 }
 
 const CAPTIONS = {
@@ -72,11 +61,16 @@ const CAPTIONS = {
   light: 'La cola se forma en rojo y, en verde, se suelta como una onda que viaja hacia atrás.',
 }
 
+// The fluid model has no randomness: on the ring it starts nearly even and stays that way.
+// That is one of the project's results, so the viewer says it instead of showing a flat street.
+const RING_MACRO_NOTE = 'El modelo de fluido no tiene azar: sin un obstáculo, la densidad se queda pareja y no nacen atascos. Prueba Bus o Semáforo para ver la cola como una onda.'
+
 const DEFAULTS = { scenario: 'ring', rho: 0.15, alpha: 0.3, vmax: 5, p: 0.25, seed: 3, red: 40, green: 30 }
 
 function DeckOverlay(props) {
   const overlay = useControl(() => new MapboxOverlay(props))
   overlay.setProps(props)
+  if (import.meta.env.DEV) window.__deck = overlay // for debugging in the browser console
   return null
 }
 
@@ -90,8 +84,8 @@ export default function App() {
   const [view, setView] = useState('micro')
   const [colorMode, setColorMode] = useState('speed')
   const [trails, setTrails] = useState(false)
-  const [camera, setCamera] = useState('tilt')
-  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 760)
+  const [camera, setCamera] = useState('near')
+  const [panelOpen, setPanelOpen] = useState(true)
   const [tick, setTick] = useState(0)
   const [snap, setSnap] = useState(null)
   const [zoom, setZoom] = useState(TILT.zoom)
@@ -129,6 +123,9 @@ export default function App() {
   const cells = useMemo(() => (road ? buildCellTable(road).cells.slice(0, ROAD_CELLS) : null), [road])
   const street = useMemo(() => (cells ? cells.map((c) => [c.lng, c.lat]) : null), [cells])
   const segments = useMemo(() => (cells ? buildSegments(cells) : null), [cells])
+  // The density band, on the street (fluid only) or beside it (with the cars).
+  const band = useMemo(() => (cells ? buildBand(cells) : null), [cells])
+  const bandSide = useMemo(() => (cells ? buildBand(cells, { width: 7, side: 13 }) : null), [cells])
   const diagram = useMemo(() => (tables ? diagramForP(tables[params.vmax], params.p) : null), [tables, params.vmax, params.p])
   diagramRef.current = diagram
   const qTop = useMemo(() => (tables ? diagramForP(tables[5], 0).qMax * 1.12 : 1), [tables])
@@ -215,11 +212,19 @@ export default function App() {
     const map = mapRef.current
     if (!map || !cells || !mapReady) return
     // The first framing is instant; later camera changes glide.
-    if (camera !== 'follow') frameStreet(map, cells, camera, framedRef.current ? 1200 : 0)
+    if (camera !== 'follow') frameStreet(map, cells, camera, simRef.current, framedRef.current ? 1200 : 0)
     framedRef.current = true
     if (camera !== 'follow') followRef.current = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, cells, mapReady, params.scenario]) // the live panel's height depends on the scenario
+  }, [camera, cells, mapReady, params.scenario]) // the near camera looks at each scenario's action
+
+  // The map's box changes when the side panel opens or closes: let MapLibre redraw at the new size.
+  useEffect(() => {
+    const map = mapRef.current?.getMap?.()
+    if (!map) return
+    const id = setTimeout(() => map.resize(), 260) // after the panel's width transition
+    return () => clearTimeout(id)
+  }, [panelOpen, mapReady])
 
   const set = useCallback((changes) => setParams((p) => ({ ...p, ...changes })), [])
 
@@ -259,6 +264,8 @@ export default function App() {
       cells,
       segments,
       rho: sim.rho,
+      rhoPrev: sim.rhoPrev,
+      f,
       rhoC: diagram.rhoC,
       vmax: params.vmax,
       view,
@@ -267,10 +274,12 @@ export default function App() {
       t: sim.t,
       tick,
       zoom,
+      band,
+      bandSide,
       ...frame,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frame, view, colorMode, trails, params.vmax, street, zoom])
+  }, [frame, view, colorMode, trails, params.vmax, street, zoom, band, bandSide])
 
   const onClick = useCallback(
     (info) => {
@@ -288,66 +297,83 @@ export default function App() {
     [params.scenario],
   )
 
+  const ringMacro = params.scenario === 'ring' && view !== 'micro'
+
   return (
-    <>
-      <Map
-        ref={mapRef}
-        initialViewState={TILT}
-        onLoad={() => setMapReady(true)}
-        mapStyle={`${BASE}dark3d.json`}
-        style={{ position: 'absolute', inset: 0 }}
-        attributionControl={{ compact: false }}
-        onMove={(e) => setZoom(Math.round(e.viewState.zoom * 10) / 10)}
-        onDragStart={() => camera === 'follow' && setCamera('tilt')}
-      >
-        <DeckOverlay layers={layers} onClick={onClick} getCursor={getCursor} pickingRadius={14} />
-      </Map>
-
-      <header className="title">
-        <h1>
-          <span className="dot" />
-          Atascos fantasma · Calzada Roosevelt
-        </h1>
-        <p>{error ?? CAPTIONS[params.scenario]}</p>
-      </header>
-
-      {params.scenario === 'bus' && !error && (
-        <div className="hint" role="note">
-          <TapIcon />
-          {snap?.buses.length ? 'Toca otra vez para otro bus' : 'Toca la calle para detener un bus 30 s'}
+    <div className={`app ${panelOpen ? 'panel-open' : 'panel-closed'}`}>
+      <aside className="sidebar" aria-label="Simulación: datos en vivo y controles">
+        <div className="sidebar-head">
+          {panelOpen && (
+            <div className="title">
+              <h1>
+                <span className="dot" />
+                Atascos fantasma · Calzada Roosevelt
+              </h1>
+              <p>{error ?? CAPTIONS[params.scenario]}</p>
+            </div>
+          )}
+          <button
+            type="button"
+            className="panel-toggle"
+            onClick={() => setPanelOpen((o) => !o)}
+            aria-expanded={panelOpen}
+            aria-label={panelOpen ? 'Ocultar el panel' : 'Mostrar el panel'}
+            title={panelOpen ? 'Ocultar el panel' : 'Mostrar el panel'}
+          >
+            {panelOpen ? <CloseIcon /> : <SlidersIcon />}
+          </button>
         </div>
-      )}
 
-      <aside className={`side ${panelOpen ? 'open' : ''}`} aria-label="Controles de la simulación">
-        <button type="button" className="panel-toggle" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelOpen}>
-          {panelOpen ? <CloseIcon /> : <SlidersIcon />}
-          <span>{panelOpen ? 'Cerrar' : 'Controles'}</span>
-        </button>
         {panelOpen && (
-          <Controls
-            params={params}
-            set={set}
-            playing={playing}
-            togglePlay={() => setPlaying((p) => !p)}
-            reset={reset}
-            speed={speed}
-            setSpeed={setSpeed}
-            view={view}
-            setView={setView}
-            colorMode={colorMode}
-            setColorMode={setColorMode}
-            trails={trails}
-            setTrails={setTrails}
-            camera={camera}
-            setCamera={setCamera}
-          />
+          <div className="sidebar-body">
+            {ringMacro && <p className="note">{RING_MACRO_NOTE}</p>}
+            <LivePanel snap={snap} diagram={diagram} qTop={qTop} view={view} scenario={params.scenario} />
+            <Legend view={view} colorMode={colorMode} vmax={params.vmax} />
+            <Controls
+              params={params}
+              set={set}
+              playing={playing}
+              togglePlay={() => setPlaying((p) => !p)}
+              reset={reset}
+              speed={speed}
+              setSpeed={setSpeed}
+              view={view}
+              setView={setView}
+              colorMode={colorMode}
+              setColorMode={setColorMode}
+              trails={trails}
+              setTrails={setTrails}
+              camera={camera}
+              setCamera={setCamera}
+            />
+          </div>
         )}
       </aside>
 
-      <div className="bottom-left">
-        <LivePanel snap={snap} diagram={diagram} qTop={qTop} view={view} scenario={params.scenario} />
-        <Legend view={view} colorMode={colorMode} vmax={params.vmax} />
-      </div>
-    </>
+      <main className="stage">
+        <Map
+          ref={mapRef}
+          initialViewState={TILT}
+          onLoad={(e) => {
+            if (import.meta.env.DEV) window.__map = e.target // for debugging in the browser console
+            setMapReady(true)
+          }}
+          mapStyle={`${BASE}dark3d.json`}
+          style={{ position: 'absolute', inset: 0 }}
+          attributionControl={{ compact: false }}
+          onMove={(e) => setZoom(Math.round(e.viewState.zoom * 10) / 10)}
+          onDragStart={() => camera === 'follow' && setCamera('tilt')}
+        >
+          <DeckOverlay layers={layers} onClick={onClick} getCursor={getCursor} pickingRadius={14} />
+        </Map>
+
+        {params.scenario === 'bus' && !error && (
+          <div className="hint" role="note">
+            <TapIcon />
+            {snap?.buses.length ? 'Toca otra vez para otro bus' : 'Toca la calle para detener un bus 30 s'}
+          </div>
+        )}
+      </main>
+    </div>
   )
 }

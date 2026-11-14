@@ -1,8 +1,9 @@
 // Live panel: counters in real units and the fundamental diagram from E1 with the current state on it.
 const nf = new Intl.NumberFormat('es-GT', { maximumFractionDigits: 0 })
-const W = 264
-const H = 132
-const PAD = { l: 34, r: 8, t: 8, b: 22 }
+// Drawn in a wide panel now, so the chart gets real room and axis titles.
+const W = 360
+const H = 220
+const PAD = { l: 40, r: 10, t: 10, b: 34 }
 const KM = 1000 / 7.5 // cars/cell -> cars/km
 const HOUR = 3600 // cars/step -> cars/h
 
@@ -80,11 +81,20 @@ export function LivePanel({ snap, diagram, qTop, view, scenario }) {
               </text>
             </g>
           ))}
-          {[0, 40, 80, 120].map((d) => (
-            <text key={d} x={x(d / KM)} y={H - 6} className="tick" textAnchor="middle">
+          {[0, 20, 40, 60, 80, 100, 120].map((d) => (
+            <text key={d} x={x(d / KM)} y={H - PAD.b + 14} className="tick" textAnchor="middle">
               {d}
             </text>
           ))}
+          <text x={(PAD.l + W - PAD.r) / 2} y={H - 3} className="axis" textAnchor="middle">
+            densidad (carros/km)
+          </text>
+          <text x={11} y={(PAD.t + H - PAD.b) / 2} className="axis" textAnchor="middle" transform={`rotate(-90 11 ${(PAD.t + H - PAD.b) / 2})`}>
+            flujo (carros/h)
+          </text>
+          <text x={x(diagram.rhoC) + 4} y={PAD.t + 10} className="tick">
+            capacidad
+          </text>
           <line x1={x(diagram.rhoC)} x2={x(diagram.rhoC)} y1={PAD.t} y2={H - PAD.b} className="crit" />
           <path d={curve} className="curve" />
           {showMacro && <circle cx={x(macro.density)} cy={y(macro.flow)} r="5.5" className="dot-macro" />}
@@ -126,11 +136,14 @@ export function Legend({ view, colorMode, vmax }) {
           </div>
         ))}
       {view !== 'micro' && (
-        <div className="legend-row">
-          <span>libre</span>
-          <span className="ramp density grow" />
-          <span>atasco</span>
-        </div>
+        <>
+          <div className="legend-row">
+            <span>fluye</span>
+            <span className="ramp density grow" />
+            <span>atasco</span>
+          </div>
+          <p className="legend-note">En el fluido, la franja sube donde hay más carros por km: una cola se ve como una montaña.</p>
+        </>
       )}
     </div>
   )
